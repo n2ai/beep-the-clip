@@ -1,5 +1,7 @@
+import { signIn } from "aws-amplify/auth"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Controller, useForm } from "react-hook-form"
+import { useForm } from "react-hook-form"
+import { Link, useNavigate } from "react-router-dom"
 import * as z from "zod"
 
 import { Button } from "@/components/ui/button"
@@ -10,8 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { FieldGroup } from "@/components/ui/field"
+import { FormInput } from "@/components/form-input"
 
 const loginSchema = z.object({
   email: z.email("Enter a valid email address."),
@@ -21,15 +23,28 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>
 
 export default function LoginPage() {
+  const navigate = useNavigate()
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "" },
   })
 
   async function onSubmit(values: LoginValues) {
-    // TODO: call Amazon Cognito here (later milestone).
-    // Never log the password.
-    console.log("login attempt for", values.email)
+    try {
+      await signIn({
+        username: values.email,
+        password: values.password,
+      })
+      // Session tokens are automatically stored in localStorage by Amplify.
+      // TODO: navigate to dashboard (future milestone)
+    } catch (err) {
+      if (err instanceof Error && err.name === "UserNotConfirmedException") {
+        navigate("/confirm", { state: { email: values.email } })
+        return
+      }
+      const message = err instanceof Error ? err.message : "Sign in failed."
+      form.setError("root", { message })
+    }
   }
 
   return (
@@ -42,49 +57,36 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <FieldGroup>
-              <Controller
-                name="email"
+              <FormInput
                 control={form.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="email">Email</FieldLabel>
-                    <Input
-                      {...field}
-                      id="email"
-                      type="email"
-                      autoComplete="email"
-                      aria-invalid={fieldState.invalid}
-                    />
-                    {fieldState.invalid && (
-                      <FieldError errors={[fieldState.error]} />
-                    )}
-                  </Field>
-                )}
+                name="email"
+                label="Email"
+                type="email"
+                autoComplete="email"
+              />
+              <FormInput
+                control={form.control}
+                name="password"
+                label="Password"
+                type="password"
+                autoComplete="current-password"
               />
 
-              <Controller
-                name="password"
-                control={form.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="password">Password</FieldLabel>
-                    <Input
-                      {...field}
-                      id="password"
-                      type="password"
-                      autoComplete="current-password"
-                      aria-invalid={fieldState.invalid}
-                    />
-                    {fieldState.invalid && (
-                      <FieldError errors={[fieldState.error]} />
-                    )}
-                  </Field>
-                )}
-              />
+              {form.formState.errors.root && (
+                <p className="text-sm text-destructive" role="alert">
+                  {form.formState.errors.root.message}
+                </p>
+              )}
 
               <Button type="submit" disabled={form.formState.isSubmitting}>
                 Sign in
               </Button>
+              <p className="text-center text-sm text-muted-foreground">
+                No account yet?{" "}
+                <Link to="/register" className="underline underline-offset-4">
+                  Create one
+                </Link>
+              </p>
             </FieldGroup>
           </form>
         </CardContent>
