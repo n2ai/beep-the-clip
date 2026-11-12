@@ -36,7 +36,7 @@ export default function LoginPage() {
         password: values.password,
       })
       // Session tokens are automatically stored in localStorage by Amplify.
-      // TODO: navigate to dashboard (future milestone)
+      navigate("/dashboard")
     } catch (err) {
       if (err instanceof Error && err.name === "UserNotConfirmedException") {
         navigate("/confirm", { state: { email: values.email } })
