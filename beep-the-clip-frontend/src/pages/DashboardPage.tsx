@@ -1,5 +1,10 @@
 import { Plus, Clock, CheckCircle, AlertCircle, Loader } from "lucide-react"
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useForm } from "react-hook-form"
+import * as z from "zod"
+
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -8,6 +13,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
 type WorkspaceStatus = "processing" | "ready" | "flagged" | "uploading"
@@ -18,7 +33,6 @@ interface Workspace {
   status: WorkspaceStatus
   createdAt: string
   duration: string
-  thumbnail?: string
 }
 
 // Placeholder data — replace with API call later
@@ -79,6 +93,90 @@ const statusConfig: Record<
   },
 }
 
+const newWorkspaceSchema = z.object({
+  title: z
+    .string()
+    .min(1, "Workspace name is required.")
+    .max(100, "Workspace name must be at most 100 characters."),
+})
+
+type NewWorkspaceValues = z.infer<typeof newWorkspaceSchema>
+
+function NewWorkspaceDialog({
+  open,
+  onOpenChange,
+  onCreate,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onCreate: (title: string) => Promise<void>
+}) {
+  const form = useForm<NewWorkspaceValues>({
+    resolver: zodResolver(newWorkspaceSchema),
+    defaultValues: { title: "" },
+  })
+
+  async function onSubmit(values: NewWorkspaceValues) {
+    await onCreate(values.title)
+    form.reset()
+  }
+
+  function handleOpenChange(next: boolean) {
+    if (!next) form.reset()
+    onOpenChange(next)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>New workspace</DialogTitle>
+          <DialogDescription>
+            Give your workspace a name to get started.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={form.handleSubmit(onSubmit)}>
+          <FieldGroup>
+            <Field data-invalid={!!form.formState.errors.title}>
+              <FieldLabel htmlFor="title">Workspace name</FieldLabel>
+              <Input
+                {...form.register("title")}
+                id="title"
+                placeholder="e.g. Product launch video"
+                autoFocus
+                aria-invalid={!!form.formState.errors.title}
+              />
+              {form.formState.errors.title && (
+                <FieldError errors={[form.formState.errors.title]} />
+              )}
+            </Field>
+
+            {form.formState.errors.root && (
+              <p className="text-sm text-destructive" role="alert">
+                {form.formState.errors.root.message}
+              </p>
+            )}
+          </FieldGroup>
+
+          <DialogFooter className="mt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={form.formState.isSubmitting}>
+              {form.formState.isSubmitting ? "Creating…" : "Create workspace"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const navigate = useNavigate()
   const { label, icon, className: statusClass } = statusConfig[workspace.status]
@@ -88,16 +186,13 @@ function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       className="cursor-pointer transition-shadow hover:ring-foreground/20"
       onClick={() => navigate(`/workspace/${workspace.id}`)}
     >
-      {/* Thumbnail placeholder */}
       <div className="aspect-video w-full bg-muted flex items-center justify-center rounded-t-xl">
         <span className="text-xs text-muted-foreground">No preview</span>
       </div>
-
       <CardHeader>
         <CardTitle className="truncate">{workspace.title}</CardTitle>
         <CardDescription>{workspace.createdAt}</CardDescription>
       </CardHeader>
-
       <CardFooter className="flex items-center justify-between text-xs text-muted-foreground">
         <span className={cn("flex items-center gap-1 font-medium", statusClass)}>
           {icon}
@@ -111,10 +206,17 @@ function WorkspaceCard({ workspace }: { workspace: Workspace }) {
 
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  async function handleCreate(title: string) {
+    // TODO: replace with real API call → POST /workspaces { title }
+    // const { id } = await api.post("/workspaces", { title })
+    const mockId = `ws-${Date.now()}`
+    navigate(`/workspace/${mockId}`, { state: { title } })
+  }
 
   return (
     <div className="p-6">
-      {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">My workspaces</h1>
@@ -125,14 +227,13 @@ export default function DashboardPage() {
         <Button
           size="sm"
           className="gap-1.5"
-          onClick={() => navigate("/workspace/new")}
+          onClick={() => setDialogOpen(true)}
         >
           <Plus className="size-4" />
           New upload
         </Button>
       </div>
 
-      {/* Grid */}
       {MOCK_WORKSPACES.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20 text-center">
           <p className="text-sm text-muted-foreground">No workspaces yet.</p>
@@ -140,7 +241,7 @@ export default function DashboardPage() {
             size="sm"
             variant="outline"
             className="mt-4 gap-1.5"
-            onClick={() => navigate("/workspace/new")}
+            onClick={() => setDialogOpen(true)}
           >
             <Plus className="size-4" />
             Upload your first video
@@ -153,6 +254,12 @@ export default function DashboardPage() {
           ))}
         </div>
       )}
+
+      <NewWorkspaceDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onCreate={handleCreate}
+      />
     </div>
   )
 }

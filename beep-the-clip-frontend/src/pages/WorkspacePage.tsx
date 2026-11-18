@@ -1,5 +1,5 @@
 import { ArrowLeft, Upload } from "lucide-react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
@@ -63,8 +63,11 @@ function VideoPanel({
 export default function WorkspacePage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const isNew = id === "new"
+  const stateTitle = (location.state as { title?: string } | null)?.title
   const workspace = isNew ? null : MOCK_WORKSPACE
+  const title = stateTitle ?? workspace?.title ?? "Workspace"
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -83,7 +86,7 @@ export default function WorkspacePage() {
 
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-medium">
-            {isNew ? "New workspace" : workspace?.title ?? "Workspace"}
+            {title}
           </h1>
           {!isNew && (
             <p className="text-xs text-muted-foreground">
