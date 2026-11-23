@@ -1,5 +1,5 @@
 import { Plus, Clock, CheckCircle, AlertCircle, Loader } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -24,71 +24,28 @@ import {
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
+import { workspacesApi, type Workspace } from "@/lib/api/workspaces"
+import { ApiError } from "@/lib/api-client"
 
-type WorkspaceStatus = "processing" | "ready" | "flagged" | "uploading"
-
-interface Workspace {
-  id: string
-  title: string
-  status: WorkspaceStatus
-  createdAt: string
-  duration: string
-}
-
-// Placeholder data — replace with API call later
-const MOCK_WORKSPACES: Workspace[] = [
-  {
-    id: "ws-1",
-    title: "Product demo v2.mp4",
-    status: "ready",
-    createdAt: "2026-11-08",
-    duration: "4:32",
-  },
-  {
-    id: "ws-2",
-    title: "Interview clip — Nov 7.mp4",
-    status: "flagged",
-    createdAt: "2026-11-07",
-    duration: "12:10",
-  },
-  {
-    id: "ws-3",
-    title: "Intro animation.mp4",
-    status: "processing",
-    createdAt: "2026-11-10",
-    duration: "0:45",
-  },
-  {
-    id: "ws-4",
-    title: "Keynote recording.mp4",
-    status: "uploading",
-    createdAt: "2026-11-10",
-    duration: "—",
-  },
-]
+type WorkspaceStatus = Workspace["status"]
 
 const statusConfig: Record<
   WorkspaceStatus,
   { label: string; icon: React.ReactNode; className: string }
 > = {
-  ready: {
-    label: "Ready",
+  active: {
+    label: "Active",
     icon: <CheckCircle className="size-3.5" />,
     className: "text-emerald-600 dark:text-emerald-400",
   },
-  flagged: {
-    label: "Flagged",
-    icon: <AlertCircle className="size-3.5" />,
-    className: "text-amber-600 dark:text-amber-400",
-  },
-  processing: {
-    label: "Processing",
-    icon: <Loader className="size-3.5 animate-spin" />,
-    className: "text-blue-600 dark:text-blue-400",
-  },
-  uploading: {
+  hidden: {
     label: "Uploading",
     icon: <Clock className="size-3.5" />,
+    className: "text-muted-foreground",
+  },
+  archived: {
+    label: "Archived",
+    icon: <AlertCircle className="size-3.5" />,
     className: "text-muted-foreground",
   },
 }
@@ -191,14 +148,15 @@ function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       </div>
       <CardHeader>
         <CardTitle className="truncate">{workspace.title}</CardTitle>
-        <CardDescription>{workspace.createdAt}</CardDescription>
+        <CardDescription>
+          {new Date(workspace.created_at).toLocaleDateString()}
+        </CardDescription>
       </CardHeader>
       <CardFooter className="flex items-center justify-between text-xs text-muted-foreground">
         <span className={cn("flex items-center gap-1 font-medium", statusClass)}>
           {icon}
           {label}
         </span>
-        <span>{workspace.duration}</span>
       </CardFooter>
     </Card>
   )
@@ -206,13 +164,31 @@ function WorkspaceCard({ workspace }: { workspace: Workspace }) {
 
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
+  useEffect(() => {
+    workspacesApi
+      .list()
+      .then(setWorkspaces)
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load workspaces.")
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
   async function handleCreate(title: string) {
-    // TODO: replace with real API call → POST /workspaces { title }
-    // const { id } = await api.post("/workspaces", { title })
-    const mockId = `ws-${Date.now()}`
-    navigate(`/workspace/${mockId}`, { state: { title } })
+    try {
+      const workspace = await workspacesApi.create(title)
+      setDialogOpen(false)
+      navigate(`/workspace/${workspace.id}`, { state: { title: workspace.title } })
+    } catch (err) {
+      throw new Error(
+        err instanceof ApiError ? err.message : "Failed to create workspace."
+      )
+    }
   }
 
   return (
@@ -221,7 +197,9 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-lg font-semibold">My workspaces</h1>
           <p className="text-sm text-muted-foreground">
-            {MOCK_WORKSPACES.length} workspace{MOCK_WORKSPACES.length !== 1 ? "s" : ""}
+            {loading
+              ? "Loading…"
+              : `${workspaces.length} workspace${workspaces.length !== 1 ? "s" : ""}`}
           </p>
         </div>
         <Button
@@ -234,7 +212,38 @@ export default function DashboardPage() {
         </Button>
       </div>
 
-      {MOCK_WORKSPACES.length === 0 ? (
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center py-20">
+          <Loader className="size-5 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
+      {/* Error state */}
+      {!loading && error && (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-destructive/50 py-20 text-center">
+          <p className="text-sm text-destructive">{error}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-4"
+            onClick={() => {
+              setError(null)
+              setLoading(true)
+              workspacesApi
+                .list()
+                .then(setWorkspaces)
+                .catch((err) => setError(err instanceof Error ? err.message : "Failed."))
+                .finally(() => setLoading(false))
+            }}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && !error && workspaces.length === 0 && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20 text-center">
           <p className="text-sm text-muted-foreground">No workspaces yet.</p>
           <Button
@@ -247,9 +256,12 @@ export default function DashboardPage() {
             Upload your first video
           </Button>
         </div>
-      ) : (
+      )}
+
+      {/* Grid */}
+      {!loading && !error && workspaces.length > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {MOCK_WORKSPACES.map((ws) => (
+          {workspaces.map((ws) => (
             <WorkspaceCard key={ws.id} workspace={ws} />
           ))}
         </div>
